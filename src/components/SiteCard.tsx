@@ -1,9 +1,7 @@
 // src/components/SiteCard.tsx
-import { useState, memo } from 'react';
+import { useState, memo, ReactNode } from 'react';
 import { Site } from '../API/http';
 import SiteSettingsModal from './SiteSettingsModal';
-import { useSortable } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 // 引入Material UI组件
 import {
   Card,
@@ -16,7 +14,6 @@ import {
   Fade,
 } from '@mui/material';
 import SettingsIcon from '@mui/icons-material/Settings';
-import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 
 interface SiteCardProps {
   site: Site;
@@ -24,7 +21,7 @@ interface SiteCardProps {
   onDelete: (siteId: number) => void;
   isEditMode?: boolean;
   viewMode?: 'readonly' | 'edit'; // 访问模式
-  index?: number;
+  dragHandle?: ReactNode;
   iconApi?: string; // 添加iconApi属性
 }
 
@@ -35,26 +32,12 @@ const SiteCard = memo(function SiteCard({
   onDelete,
   isEditMode = false,
   viewMode = 'edit', // 默认为编辑模式
-  index = 0,
+  dragHandle,
   iconApi, // 添加iconApi参数
 }: SiteCardProps) {
   const [showSettings, setShowSettings] = useState(false);
   const [iconError, setIconError] = useState(!site.icon);
   const [imageLoaded, setImageLoaded] = useState(false);
-
-  // 使用dnd-kit的useSortable hook
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: `site-${site.id || index}`,
-    disabled: !isEditMode,
-  });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    zIndex: isDragging ? 9999 : 'auto',
-    opacity: isDragging ? 0.8 : 1,
-    position: 'relative' as const,
-  };
 
   // 如果没有图标，使用首字母作为图标
   const fallbackIcon = site.name.charAt(0).toUpperCase();
@@ -93,6 +76,8 @@ const SiteCard = memo(function SiteCard({
     <Box
       sx={{
         height: '100%',
+        minWidth: 0,
+        minHeight: { xs: 96, sm: 104 },
         position: 'relative',
         transition: 'transform 0.3s ease-in-out',
         ...(!isEditMode && {
@@ -111,7 +96,7 @@ const SiteCard = memo(function SiteCard({
           transition: 'box-shadow 0.3s ease-in-out',
           border: '1px solid',
           borderColor: 'divider',
-          boxShadow: isDragging ? 8 : 2,
+          boxShadow: 2,
           '&:hover': !isEditMode
             ? {
                 boxShadow: 5,
@@ -128,16 +113,15 @@ const SiteCard = memo(function SiteCard({
             sx={{
               height: '100%',
               p: { xs: 1.5, sm: 2 },
-              cursor: 'grab',
               display: 'flex',
               flexDirection: 'column',
             }}
           >
-            <Box position='absolute' top={8} right={8}>
-              <DragIndicatorIcon fontSize='small' color='primary' />
+            <Box position='absolute' top={4} right={4}>
+              {dragHandle}
             </Box>
             {/* 图标和名称 */}
-            <Box display='flex' alignItems='center' mb={1}>
+            <Box display='flex' alignItems='center' mb={1} sx={{ minWidth: 0, pr: 2.5 }}>
               {!iconError && site.icon ? (
                 <Box position='relative' mr={1.5} width={32} height={32} flexShrink={0}>
                   <Skeleton
@@ -170,6 +154,7 @@ const SiteCard = memo(function SiteCard({
                   sx={{
                     width: 32,
                     height: 32,
+                    flexShrink: 0,
                     mr: 1.5,
                     borderRadius: 1,
                     bgcolor: 'primary.light',
@@ -191,6 +176,7 @@ const SiteCard = memo(function SiteCard({
                 noWrap
                 sx={{
                   fontSize: { xs: '0.875rem', sm: '1rem' },
+                  minWidth: 0,
                 }}
               >
                 {site.name}
@@ -226,7 +212,7 @@ const SiteCard = memo(function SiteCard({
               }}
             >
               {/* 图标和名称 */}
-              <Box display='flex' alignItems='center' mb={1}>
+              <Box display='flex' alignItems='center' mb={1} sx={{ minWidth: 0, pr: 2.5 }}>
                 {!iconError && site.icon ? (
                   <Box position='relative' mr={1.5} width={32} height={32} flexShrink={0}>
                     <Skeleton
@@ -259,6 +245,7 @@ const SiteCard = memo(function SiteCard({
                     sx={{
                       width: 32,
                       height: 32,
+                      flexShrink: 0,
                       mr: 1.5,
                       borderRadius: 1,
                       bgcolor: 'primary.light',
@@ -280,6 +267,7 @@ const SiteCard = memo(function SiteCard({
                   noWrap
                   sx={{
                     fontSize: { xs: '0.875rem', sm: '1rem' },
+                    minWidth: 0,
                   }}
                 >
                   {site.name}
@@ -332,26 +320,6 @@ const SiteCard = memo(function SiteCard({
       </Card>
     </Box>
   );
-
-  if (isEditMode) {
-    return (
-      <>
-        <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-          {cardContent}
-        </div>
-
-        {showSettings && (
-          <SiteSettingsModal
-            site={site}
-            onUpdate={onUpdate}
-            onDelete={onDelete}
-            onClose={handleCloseSettings}
-            iconApi={iconApi} // 传递iconApi给SiteSettingsModal
-          />
-        )}
-      </>
-    );
-  }
 
   return (
     <>

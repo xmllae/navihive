@@ -5,6 +5,7 @@ import { Site, Group } from './API/http';
 import { GroupWithSites } from './types';
 import ThemeToggle from './components/ThemeToggle';
 import GroupCard from './components/GroupCard';
+import GroupNavigation from './components/GroupNavigation';
 import LoginForm from './components/LoginForm';
 import SearchBox from './components/SearchBox';
 import { sanitizeCSS, isSecureUrl, extractDomain } from './utils/url';
@@ -100,6 +101,22 @@ const DEFAULT_CONFIGS = {
 };
 
 function App() {
+  const [navigationTarget, setNavigationTarget] = useState({ groupId: 0, request: 0 });
+  const navigateToGroup = (groupId: number) => {
+    setNavigationTarget((previous) => ({ groupId, request: previous.request + 1 }));
+  };
+
+  useEffect(() => {
+    if (!navigationTarget.request) return;
+    const frame = requestAnimationFrame(() => {
+      document.getElementById(`group-${navigationTarget.groupId}`)?.scrollIntoView({
+        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+        block: 'start',
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [navigationTarget]);
+
   // 主题模式状态
   const [darkMode, setDarkMode] = useState(() => {
     const savedTheme = localStorage.getItem('theme');
@@ -496,8 +513,8 @@ function App() {
 
       if (result) {
         console.log('站点排序更新成功');
-        // 重新获取最新数据
-        await fetchData();
+        // 保留卡片和排序草稿，避免刷新失败时因卸载组件丢失草稿。
+        setGroups(await api.getGroupsWithSites());
       } else {
         throw new Error('站点排序更新失败');
       }
@@ -1210,6 +1227,7 @@ function App() {
                 minHeight: '100px',
               }}
             >
+              <GroupNavigation groups={groups} onNavigate={navigateToGroup} />
               {sortMode === SortMode.GroupSort ? (
                 <DndContext
                   sensors={sensors}
@@ -1229,7 +1247,9 @@ function App() {
                       }}
                     >
                       {groups.map((group) => (
-                        <SortableGroupItem key={group.id} id={group.id.toString()} group={group} />
+                        <Box key={group.id} id={`group-${group.id}`} sx={{ scrollMarginTop: 24 }}>
+                          <SortableGroupItem id={group.id.toString()} group={group} />
+                        </Box>
                       ))}
                     </Stack>
                   </SortableContext>
@@ -1237,7 +1257,11 @@ function App() {
               ) : (
                 <Stack spacing={5}>
                   {groups.map((group) => (
-                    <Box key={`group-${group.id}`} id={`group-${group.id}`}>
+                    <Box
+                      key={`group-${group.id}`}
+                      id={`group-${group.id}`}
+                      sx={{ scrollMarginTop: 24 }}
+                    >
                       <GroupCard
                         group={group}
                         sortMode={sortMode === SortMode.None ? 'None' : 'SiteSort'}
@@ -1251,6 +1275,9 @@ function App() {
                         onUpdateGroup={handleGroupUpdate}
                         onDeleteGroup={handleGroupDelete}
                         configs={configs}
+                        expandRequest={
+                          navigationTarget.groupId === group.id ? navigationTarget.request : 0
+                        }
                       />
                     </Box>
                   ))}

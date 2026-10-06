@@ -1,23 +1,28 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Site, Group } from '../API/http';
 import SiteCard from './SiteCard';
+import SortableSiteCard from './SortableSiteCard';
 import { GroupWithSites } from '../types';
 import EditGroupDialog from './EditGroupDialog';
 import {
   DndContext,
+  DragOverlay,
   closestCenter,
+  pointerWithin,
   KeyboardSensor,
-  PointerSensor,
+  MouseSensor,
   TouchSensor,
   useSensor,
   useSensors,
   DragEndEvent,
+  DragStartEvent,
 } from '@dnd-kit/core';
 import {
   arrayMove,
   SortableContext,
   sortableKeyboardCoordinates,
-  horizontalListSortingStrategy,
+  rectSortingStrategy,
 } from '@dnd-kit/sortable';
 // 引入Material UI组件
 import {
@@ -46,12 +51,13 @@ interface GroupCardProps {
   viewMode?: 'readonly' | 'edit'; // 访问模式
   onUpdate: (updatedSite: Site) => void;
   onDelete: (siteId: number) => void;
-  onSaveSiteOrder: (groupId: number, sites: Site[]) => void;
+  onSaveSiteOrder: (groupId: number, sites: Site[]) => void | Promise<void>;
   onStartSiteSort: (groupId: number) => void;
   onAddSite?: (groupId: number) => void; // 新增添加卡片的可选回调函数
   onUpdateGroup?: (group: Group) => void; // 更新分组的回调函数
   onDeleteGroup?: (groupId: number) => void; // 删除分组的回调函数
   configs?: Record<string, string>; // 传入配置
+  expandRequest?: number;
 }
 
 const GroupCard: React.FC<GroupCardProps> = ({
@@ -67,9 +73,12 @@ const GroupCard: React.FC<GroupCardProps> = ({
   onUpdateGroup,
   onDeleteGroup,
   configs,
+  expandRequest,
 }) => {
   // 添加本地状态来管理站点排序
   const [sites, setSites] = useState<Site[]>(group.sites);
+  const [activeSiteId, setActiveSiteId] = useState<number | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
   // 添加编辑弹窗的状态
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   // 添加提示消息状态
@@ -88,6 +97,10 @@ const GroupCard: React.FC<GroupCardProps> = ({
     }
   }, [isCollapsed, group.id]);
 
+  useEffect(() => {
+    if (expandRequest) setIsCollapsed(false);
+  }, [expandRequest]);
+
   // 处理折叠切换
   const handleToggleCollapse = () => {
     setIsCollapsed(!isCollapsed);
@@ -95,7 +108,7 @@ const GroupCard: React.FC<GroupCardProps> = ({
 
   // 配置传感器，支持鼠标、触摸和键盘操作
   const sensors = useSensors(
-    useSensor(PointerSensor, {
+    useSensor(MouseSensor, {
       activationConstraint: {
         distance: 5, // 5px 的移动才激活拖拽，防止误触
       },
@@ -114,6 +127,7 @@ const GroupCard: React.FC<GroupCardProps> = ({
   // 站点拖拽结束处理函数
   const handleSiteDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
+    setActiveSiteId(null);
 
     if (!over) return;
 
@@ -156,112 +170,95 @@ const GroupCard: React.FC<GroupCardProps> = ({
 
   // 渲染站点卡片区域
   const renderSites = () => {
-    // 使用本地状态中的站点数据
     const sitesToRender = isCurrentEditingGroup ? sites : group.sites;
-
-    // 如果当前不是正在编辑的分组且处于站点排序模式，不显示站点
-    if (!isCurrentEditingGroup && sortMode === 'SiteSort') {
-      return null;
-    }
-
-    // 如果是编辑模式，使用DndContext包装
-    if (isCurrentEditingGroup) {
-      return (
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleSiteDragEnd}
-        >
-          <SortableContext
-            items={sitesToRender.map((site) => `site-${site.id}`)}
-            strategy={horizontalListSortingStrategy}
-          >
-            <Box sx={{ width: '100%' }}>
-              <Box
-                sx={{
-                  display: 'flex',
-                  flexWrap: 'wrap',
-                  margin: -1, // 抵消内部padding，确保边缘对齐
-                }}
-              >
-                {sitesToRender.map((site, idx) => (
-                  <Box
-                    key={site.id || idx}
-                    sx={{
-                      width: {
-                        xs: '50%',
-                        sm: '50%',
-                        md: '25%',
-                        lg: '25%',
-                        xl: '25%',
-                      },
-                      padding: 1, // 内部间距，更均匀的分布
-                      boxSizing: 'border-box', // 确保padding不影响宽度计算
-                    }}
-                  >
-                    <SiteCard
-                      site={site}
-                      onUpdate={onUpdate}
-                      onDelete={onDelete}
-                      isEditMode={true}
-                      viewMode={viewMode}
-                      index={idx}
-                      iconApi={configs?.['site.iconApi']} // 传入iconApi配置
-                    />
-                  </Box>
-                ))}
-              </Box>
-            </Box>
-          </SortableContext>
-        </DndContext>
-      );
-    }
-
-    // 普通模式下的渲染
-    return (
+    const activeSite = sites.find((site) => site.id === activeSiteId);
+    const grid = (
       <Box
+        data-site-grid
         sx={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          margin: -1, // 抵消内部padding，确保边缘对齐
+          display: 'grid',
+          gridTemplateColumns: {
+            xs: 'repeat(1, minmax(0, 1fr))',
+            sm: 'repeat(2, minmax(0, 1fr))',
+            md: 'repeat(3, minmax(0, 1fr))',
+            lg: 'repeat(4, minmax(0, 1fr))',
+            xl: 'repeat(5, minmax(0, 1fr))',
+          },
+          gap: 2,
+          gridAutoRows: '1fr',
         }}
       >
-        {sitesToRender.map((site) => (
-          <Box
-            key={site.id}
-            sx={{
-              width: {
-                xs: '100%',
-                sm: '50%',
-                md: '33.33%',
-                lg: '25%',
-                xl: '20%',
-              },
-              padding: 1, // 内部间距，更均匀的分布
-              boxSizing: 'border-box', // 确保padding不影响宽度计算
-            }}
-          >
-            <SiteCard
-              site={site}
-              onUpdate={onUpdate}
-              onDelete={onDelete}
-              isEditMode={false}
-              viewMode={viewMode}
-              iconApi={configs?.['site.iconApi']} // 传入iconApi配置
-            />
-          </Box>
-        ))}
+        {sitesToRender.map((site) => {
+          const props = {
+            site,
+            onUpdate,
+            onDelete,
+            viewMode,
+            iconApi: configs?.['site.iconApi'],
+          };
+          return isCurrentEditingGroup ? (
+            <SortableSiteCard key={site.id} {...props} disabled={isSaving} />
+          ) : (
+            <Box key={site.id} data-site-id={site.id} sx={{ minWidth: 0, height: '100%' }}>
+              <SiteCard {...props} />
+            </Box>
+          );
+        })}
       </Box>
+    );
+
+    if (!isCurrentEditingGroup) return grid;
+
+    return (
+      <DndContext
+        sensors={sensors}
+        autoScroll={{ threshold: { x: 0.05, y: 0.05 } }}
+        collisionDetection={(args) =>
+          args.pointerCoordinates ? pointerWithin(args) : closestCenter(args)
+        }
+        onDragStart={(event: DragStartEvent) => {
+          const site = sites.find((item) => `site-${item.id}` === event.active.id);
+          setActiveSiteId(site?.id ?? null);
+        }}
+        onDragEnd={handleSiteDragEnd}
+        onDragCancel={() => setActiveSiteId(null)}
+      >
+        <SortableContext
+          items={sitesToRender.map((site) => `site-${site.id}`)}
+          strategy={rectSortingStrategy}
+        >
+          {grid}
+        </SortableContext>
+        {createPortal(
+          <DragOverlay dropAnimation={null}>
+            {activeSite ? (
+              <SiteCard
+                site={activeSite}
+                onUpdate={onUpdate}
+                onDelete={onDelete}
+                isEditMode
+                viewMode={viewMode}
+                iconApi={configs?.['site.iconApi']}
+              />
+            ) : null}
+          </DragOverlay>,
+          document.body
+        )}
+      </DndContext>
     );
   };
 
-  // 保存站点排序
-  const handleSaveSiteOrder = () => {
+  const handleSaveSiteOrder = async () => {
     if (!group.id) {
       console.error('分组 ID 不存在,无法保存排序');
       return;
     }
-    onSaveSiteOrder(group.id, sites);
+    setIsSaving(true);
+    try {
+      await onSaveSiteOrder(group.id, sites);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   // 处理排序按钮点击
@@ -276,6 +273,8 @@ const GroupCard: React.FC<GroupCardProps> = ({
       return;
     }
     // 确保分组展开
+    setSites([...group.sites]);
+    setActiveSiteId(null);
     if (isCollapsed) {
       setIsCollapsed(false);
     }
@@ -330,6 +329,7 @@ const GroupCard: React.FC<GroupCardProps> = ({
         >
           <IconButton
             size='small'
+            aria-label={`${isCollapsed ? '展开' : '折叠'}分组 ${group.name}`}
             className='collapse-icon'
             sx={{
               transform: isCollapsed ? 'rotate(0deg)' : 'rotate(180deg)',
@@ -369,6 +369,7 @@ const GroupCard: React.FC<GroupCardProps> = ({
               size='small'
               startIcon={<SaveIcon />}
               onClick={handleSaveSiteOrder}
+              disabled={isSaving || activeSiteId !== null}
               sx={{
                 minWidth: 'auto',
                 fontSize: { xs: '0.75rem', sm: '0.875rem' },
