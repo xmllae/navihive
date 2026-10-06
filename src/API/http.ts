@@ -124,7 +124,7 @@ export class NavigationAPI {
     this.authEnabled = env.AUTH_ENABLED === 'true';
     this.username = env.AUTH_USERNAME || '';
     this.passwordHash = env.AUTH_PASSWORD || ''; // 现在存储的是哈希
-    this.secret = env.AUTH_SECRET || 'DefaultSecretKey';
+    this.secret = env.AUTH_SECRET || '';
   }
 
   // 初始化数据库表
@@ -133,14 +133,20 @@ export class NavigationAPI {
     // 尝试自动修复缺失的字段 (即使已初始化也尝试执行，以修复旧版本数据库)
     try {
       await this.db.exec('ALTER TABLE groups ADD COLUMN is_public INTEGER DEFAULT 1;');
-    } catch {}
+    } catch {
+      // 保持兼容旧库的尽力修复行为，字段已存在时继续初始化检查。
+    }
     try {
       await this.db.exec('ALTER TABLE sites ADD COLUMN is_public INTEGER DEFAULT 1;');
-    } catch {}
+    } catch {
+      // 保持兼容旧库的尽力修复行为，字段已存在时继续初始化检查。
+    }
     try {
       await this.db.exec('CREATE INDEX IF NOT EXISTS idx_groups_is_public ON groups(is_public);');
       await this.db.exec('CREATE INDEX IF NOT EXISTS idx_sites_is_public ON sites(is_public);');
-    } catch {}
+    } catch {
+      // 索引修复失败不阻断原有初始化流程。
+    }
 
     // 首先检查数据库是否已初始化
     try {
@@ -221,6 +227,10 @@ export class NavigationAPI {
   async verifyToken(token: string): Promise<{ valid: boolean; payload?: Record<string, unknown> }> {
     if (!this.authEnabled) {
       return { valid: true };
+    }
+
+    if (!this.username || !this.passwordHash || !this.secret) {
+      return { valid: false };
     }
 
     try {

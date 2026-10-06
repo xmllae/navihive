@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { NavigationClient } from './API/client';
 import { MockNavigationClient } from './API/mock';
 import { Site, Group } from './API/http';
@@ -229,8 +229,56 @@ function App() {
     setMenuAnchorEl(null);
   };
 
+  // 处理错误的函数
+  const handleError = useCallback((errorMessage: string) => {
+    setSnackbarMessage(errorMessage);
+    setSnackbarOpen(true);
+    console.error(errorMessage);
+  }, []);
+
+  // 加载配置
+  const fetchConfigs = useCallback(async () => {
+    try {
+      const configsData = await api.getConfigs();
+      setConfigs({
+        ...DEFAULT_CONFIGS,
+        ...configsData,
+      });
+      setTempConfigs({
+        ...DEFAULT_CONFIGS,
+        ...configsData,
+      });
+    } catch (error) {
+      console.error('加载配置失败:', error);
+      // 使用默认配置
+    }
+  }, []);
+
+  const fetchData = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // 使用新的 getGroupsWithSites API 优化 N+1 查询问题
+      const groupsWithSites = await api.getGroupsWithSites();
+
+      setGroups(groupsWithSites);
+    } catch (error) {
+      console.error('加载数据失败:', error);
+      handleError('加载数据失败: ' + (error instanceof Error ? error.message : '未知错误'));
+
+      // 如果因为认证问题导致加载失败，处理认证状态
+      if (error instanceof Error && error.message.includes('认证')) {
+        setIsAuthRequired(true);
+        setIsAuthenticated(false);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [handleError]);
+
   // 检查认证状态
-  const checkAuthStatus = async () => {
+  const checkAuthStatus = useCallback(async () => {
     try {
       setIsAuthChecking(true);
       console.log('开始检查认证状态...');
@@ -287,7 +335,7 @@ function App() {
       console.log('认证检查完成');
       setIsAuthChecking(false);
     }
-  };
+  }, [fetchData, fetchConfigs]);
 
   // 登录功能
   const handleLogin = async (username: string, password: string, rememberMe: boolean = false) => {
@@ -344,24 +392,6 @@ function App() {
     setSnackbarOpen(true);
   };
 
-  // 加载配置
-  const fetchConfigs = async () => {
-    try {
-      const configsData = await api.getConfigs();
-      setConfigs({
-        ...DEFAULT_CONFIGS,
-        ...configsData,
-      });
-      setTempConfigs({
-        ...DEFAULT_CONFIGS,
-        ...configsData,
-      });
-    } catch (error) {
-      console.error('加载配置失败:', error);
-      // 使用默认配置
-    }
-  };
-
   useEffect(() => {
     // 检查认证状态
     checkAuthStatus();
@@ -369,7 +399,7 @@ function App() {
     // 确保初始化时重置排序状态
     setSortMode(SortMode.None);
     setCurrentSortingGroupId(null);
-  }, []);
+  }, [checkAuthStatus]);
 
   // 设置文档标题
   useEffect(() => {
@@ -409,39 +439,9 @@ function App() {
     }
   }, [darkMode]);
 
-  // 处理错误的函数
-  const handleError = (errorMessage: string) => {
-    setSnackbarMessage(errorMessage);
-    setSnackbarOpen(true);
-    console.error(errorMessage);
-  };
-
   // 关闭错误提示框
   const handleCloseSnackbar = () => {
     setSnackbarOpen(false);
-  };
-
-  const fetchData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      // 使用新的 getGroupsWithSites API 优化 N+1 查询问题
-      const groupsWithSites = await api.getGroupsWithSites();
-
-      setGroups(groupsWithSites);
-    } catch (error) {
-      console.error('加载数据失败:', error);
-      handleError('加载数据失败: ' + (error instanceof Error ? error.message : '未知错误'));
-
-      // 如果因为认证问题导致加载失败，处理认证状态
-      if (error instanceof Error && error.message.includes('认证')) {
-        setIsAuthRequired(true);
-        setIsAuthenticated(false);
-      }
-    } finally {
-      setLoading(false);
-    }
   };
 
   // 更新站点

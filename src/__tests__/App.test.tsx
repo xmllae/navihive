@@ -10,6 +10,8 @@ const api = vi.hoisted(() => ({
   getGroupsWithSites: vi.fn(),
   getConfigs: vi.fn(),
   updateSiteOrder: vi.fn(),
+  login: vi.fn(),
+  logout: vi.fn(),
 }));
 vi.mock('../API/mock', () => ({
   MockNavigationClient: class {
@@ -17,6 +19,8 @@ vi.mock('../API/mock', () => ({
     getGroupsWithSites = api.getGroupsWithSites;
     getConfigs = api.getConfigs;
     updateSiteOrder = api.updateSiteOrder;
+    login = api.login;
+    logout = api.logout;
     isLoggedIn = () => false;
   },
 }));
@@ -53,9 +57,49 @@ beforeEach(() => {
   api.getGroupsWithSites.mockResolvedValue([group]);
   api.getConfigs.mockResolvedValue({ 'site.searchBoxEnabled': 'false' });
   api.updateSiteOrder.mockReset();
+  api.login.mockResolvedValue({ success: true });
+  api.logout.mockResolvedValue(undefined);
 });
 
 describe('应用排序保存与导航', () => {
+  it('初始化后重新渲染不重复认证或数据加载', async () => {
+    const { rerender } = render(<App />);
+    await screen.findByRole('button', { name: '排序' });
+    expect(api.checkAuthStatus).toHaveBeenCalledTimes(1);
+    expect(api.getGroupsWithSites).toHaveBeenCalledTimes(1);
+    expect(api.getConfigs).toHaveBeenCalledTimes(1);
+    rerender(<App />);
+    await act(async () => {});
+    expect(api.checkAuthStatus).toHaveBeenCalledTimes(1);
+    expect(api.getGroupsWithSites).toHaveBeenCalledTimes(1);
+    expect(api.getConfigs).toHaveBeenCalledTimes(1);
+  });
+
+  it('访客登录、登出后重新加载数据，重新挂载重新检查认证', async () => {
+    api.checkAuthStatus.mockResolvedValue(false);
+    const user = userEvent.setup();
+    const { unmount } = render(<App />);
+    await user.click(await screen.findByRole('button', { name: '管理员登录' }));
+    await user.type(screen.getByLabelText('用户名', { exact: false }), 'test-admin');
+    await user.type(screen.getByLabelText('密码', { exact: false }), 'test-password');
+    await user.click(screen.getByRole('button', { name: '登录' }));
+    await screen.findByRole('button', { name: '排序' });
+    expect(api.login).toHaveBeenCalledWith('test-admin', 'test-password', false);
+    expect(api.getGroupsWithSites).toHaveBeenCalledTimes(2);
+    await user.click(screen.getByRole('button', { name: '更多选项' }));
+    await user.click(screen.getByRole('menuitem', { name: '退出登录' }));
+    await screen.findByRole('button', { name: '管理员登录' });
+    expect(api.logout).toHaveBeenCalledTimes(1);
+    expect(api.getGroupsWithSites).toHaveBeenCalledTimes(3);
+    expect(api.getConfigs).toHaveBeenCalledTimes(3);
+    expect(api.checkAuthStatus).toHaveBeenCalledTimes(1);
+    unmount();
+    render(<App />);
+    await screen.findByRole('button', { name: '管理员登录' });
+    expect(api.checkAuthStatus).toHaveBeenCalledTimes(2);
+    expect(api.getGroupsWithSites).toHaveBeenCalledTimes(4);
+  });
+
   it('保存及刷新失败均保留草稿，重试成功后退出排序', async () => {
     const user = userEvent.setup();
     const { container } = render(<App />);
