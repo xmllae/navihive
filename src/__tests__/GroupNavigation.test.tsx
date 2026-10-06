@@ -9,6 +9,23 @@ const groups = [
 ];
 
 describe('分组导航', () => {
+  it('移动端抽屉开关不覆盖已保存的桌面状态', async () => {
+    const change = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <GroupNavigation
+        groups={groups}
+        onNavigate={vi.fn()}
+        desktopCollapsed
+        onDesktopCollapsedChange={change}
+      />
+    );
+    await user.click(screen.getByRole('button', { name: '打开分组导航' }));
+    await user.click(screen.getByRole('button', { name: '关闭分组导航' }));
+    await waitFor(() => expect(screen.queryByRole('navigation')).not.toBeInTheDocument());
+    expect(change).not.toHaveBeenCalled();
+  });
+
   it('宽屏导航默认展开，可以收起和重新展开，跳转后保持展开', async () => {
     const matchMedia = window.matchMedia;
     const mediaSpy = vi.spyOn(window, 'matchMedia').mockImplementation((query) => ({

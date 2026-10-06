@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { NavigationClient } from './API/client';
 import { MockNavigationClient } from './API/mock';
 import { Site, Group } from './API/http';
@@ -151,6 +151,16 @@ function App() {
   const [isAuthChecking, setIsAuthChecking] = useState(true);
   const [isAuthRequired, setIsAuthRequired] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [desktopSidebarCollapsed, setDesktopSidebarCollapsed] = useState(false);
+  const [savingSidebarPreference, setSavingSidebarPreference] = useState(false);
+  const sidebarSession = useRef(0);
+
+  useEffect(
+    () => () => {
+      sidebarSession.current += 1;
+    },
+    []
+  );
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loginLoading, setLoginLoading] = useState(false);
 
@@ -276,13 +286,50 @@ function App() {
   }, [handleError]);
 
   // 检查认证状态
+  const loadSidebarPreference = useCallback(
+    async (session: number) => {
+      try {
+        const preference = await api.getDesktopSidebarPreference();
+        if (sidebarSession.current === session) setDesktopSidebarCollapsed(preference.collapsed);
+      } catch {
+        if (sidebarSession.current === session) {
+          setDesktopSidebarCollapsed(false);
+          handleError('未能读取侧栏状态，暂时展开，请刷新重试');
+        }
+      }
+    },
+    [handleError]
+  );
+
+  const changeSidebarPreference = async (collapsed: boolean) => {
+    if (savingSidebarPreference) return;
+    const previous = desktopSidebarCollapsed;
+    const session = sidebarSession.current;
+    setDesktopSidebarCollapsed(collapsed);
+    if (!isAuthenticated) return;
+    setSavingSidebarPreference(true);
+    try {
+      await api.setDesktopSidebarPreference(collapsed);
+    } catch {
+      if (sidebarSession.current === session) {
+        setDesktopSidebarCollapsed(previous);
+        handleError('侧栏状态保存失败，请重试');
+      }
+    } finally {
+      if (sidebarSession.current === session) setSavingSidebarPreference(false);
+    }
+  };
+
   const checkAuthStatus = useCallback(async () => {
+    const session = ++sidebarSession.current;
+    setDesktopSidebarCollapsed(false);
     try {
       setIsAuthChecking(true);
       console.log('开始检查认证状态...');
 
       // 尝试进行API调用,检查是否需要认证
       const result = await api.checkAuthStatus();
+      if (sidebarSession.current !== session) return;
       console.log('认证检查结果:', result);
 
       if (!result) {
@@ -305,6 +352,8 @@ function App() {
         await fetchConfigs();
       } else {
         // 已认证，设置为编辑模式
+        await loadSidebarPreference(session);
+        if (sidebarSession.current !== session) return;
         setIsAuthenticated(true);
         setIsAuthRequired(false);
         setViewMode('edit');
@@ -315,6 +364,7 @@ function App() {
         await fetchConfigs();
       }
     } catch (error) {
+      if (sidebarSession.current !== session) return;
       console.error('认证检查失败:', error);
       // 出错时也允许访客访问
       console.log('认证检查出错，设置访客模式');
@@ -331,9 +381,9 @@ function App() {
       }
     } finally {
       console.log('认证检查完成');
-      setIsAuthChecking(false);
+      if (sidebarSession.current === session) setIsAuthChecking(false);
     }
-  }, [fetchData, fetchConfigs]);
+  }, [fetchData, fetchConfigs, loadSidebarPreference]);
 
   // 登录功能
   const handleLogin = async (username: string, password: string, rememberMe: boolean = false) => {
@@ -346,6 +396,9 @@ function App() {
 
       if (loginResponse?.success) {
         // 登录成功，切换到编辑模式
+        const session = ++sidebarSession.current;
+        await loadSidebarPreference(session);
+        if (sidebarSession.current !== session) return;
         setIsAuthenticated(true);
         setIsAuthRequired(false);
         setViewMode('edit');
@@ -374,6 +427,9 @@ function App() {
 
   // 登出功能
   const handleLogout = async () => {
+    sidebarSession.current += 1;
+    setDesktopSidebarCollapsed(false);
+    setSavingSidebarPreference(false);
     await api.logout();
     setIsAuthenticated(false);
     setIsAuthRequired(false); // 允许继续以访客身份访问
@@ -1225,7 +1281,13 @@ function App() {
                 minHeight: '100px',
               }}
             >
-              <GroupNavigation groups={groups} onNavigate={navigateToGroup} />
+              <GroupNavigation
+                groups={groups}
+                onNavigate={navigateToGroup}
+                desktopCollapsed={desktopSidebarCollapsed}
+                onDesktopCollapsedChange={changeSidebarPreference}
+                savingDesktopPreference={savingSidebarPreference}
+              />
               {sortMode === SortMode.GroupSort ? (
                 <DndContext
                   sensors={sensors}

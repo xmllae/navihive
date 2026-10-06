@@ -105,6 +105,7 @@ const mockConfigs: Record<string, string> = {
 
 // 模拟API实现
 export class MockNavigationClient {
+  private desktopSidebarCollapsed = false;
   private token: string | null = null;
   public isAuthenticated: boolean = false; // 公开认证状态
 
@@ -354,6 +355,15 @@ export class MockNavigationClient {
   }
 
   // 配置相关API
+  async getDesktopSidebarPreference(): Promise<{ collapsed: boolean }> {
+    return { collapsed: this.desktopSidebarCollapsed };
+  }
+
+  async setDesktopSidebarPreference(collapsed: boolean): Promise<{ collapsed: boolean }> {
+    this.desktopSidebarCollapsed = collapsed;
+    return { collapsed };
+  }
+
   async getConfigs(): Promise<Record<string, string>> {
     await new Promise((resolve) => setTimeout(resolve, 200));
     return { ...mockConfigs };

@@ -70,6 +70,12 @@ export interface Config {
   updated_at?: string;
 }
 
+export const ACCOUNT_PREFERENCE_PREFIX = 'account-preference:';
+
+export interface DesktopSidebarPreference {
+  collapsed: boolean;
+}
+
 // 扩展导出数据接口，添加导入结果类型
 export interface ExportData {
   groups: Group[];
@@ -655,7 +661,9 @@ export class NavigationAPI {
     // 将结果转换为键值对对象
     const configs: Record<string, string> = {};
     for (const config of result.results || []) {
-      configs[config.key] = config.value;
+      if (!config.key.startsWith(ACCOUNT_PREFERENCE_PREFIX)) {
+        configs[config.key] = config.value;
+      }
     }
 
     return configs;
@@ -668,6 +676,18 @@ export class NavigationAPI {
       .first<{ value: string }>();
 
     return result ? result.value : null;
+  }
+
+  private desktopSidebarKey(): string {
+    return `${ACCOUNT_PREFERENCE_PREFIX}${encodeURIComponent(this.username)}:desktop-sidebar`;
+  }
+
+  async getDesktopSidebarPreference(): Promise<DesktopSidebarPreference> {
+    return { collapsed: (await this.getConfig(this.desktopSidebarKey())) === 'true' };
+  }
+
+  async setDesktopSidebarPreference(collapsed: boolean): Promise<boolean> {
+    return this.setConfig(this.desktopSidebarKey(), String(collapsed));
   }
 
   async setConfig(key: string, value: string): Promise<boolean> {
@@ -840,7 +860,7 @@ export class NavigationAPI {
 
       // 导入配置数据
       for (const [key, value] of Object.entries(data.configs)) {
-        if (key !== 'DB_INITIALIZED') {
+        if (key !== 'DB_INITIALIZED' && !key.startsWith(ACCOUNT_PREFERENCE_PREFIX)) {
           // 跳过数据库初始化标志
           await this.setConfig(key, value);
         }

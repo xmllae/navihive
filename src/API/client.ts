@@ -1,4 +1,12 @@
-import { Group, Site, LoginResponse, ExportData, ImportResult, GroupWithSites } from './http';
+import {
+  Group,
+  Site,
+  LoginResponse,
+  ExportData,
+  ImportResult,
+  GroupWithSites,
+  DesktopSidebarPreference,
+} from './http';
 
 export class NavigationClient {
   private baseUrl: string;
@@ -80,6 +88,10 @@ export class NavigationClient {
       // 认证失败
       this.isAuthenticated = false;
 
+      if (endpoint === 'preferences/desktop-sidebar') {
+        throw new Error('认证已过期或无效，请重新登录');
+      }
+
       // 对于 GET 请求（只读操作），允许返回空数据而不抛出异常
       if (!options.method || options.method === 'GET') {
         // 尝试解析响应，如果是访客模式可能返回部分数据
@@ -108,6 +120,17 @@ export class NavigationClient {
   }
 
   // 检查身份验证状态
+  async getDesktopSidebarPreference(): Promise<DesktopSidebarPreference> {
+    return this.request('preferences/desktop-sidebar');
+  }
+
+  async setDesktopSidebarPreference(collapsed: boolean): Promise<DesktopSidebarPreference> {
+    return this.request('preferences/desktop-sidebar', {
+      method: 'PUT',
+      body: JSON.stringify({ collapsed }),
+    });
+  }
+
   async checkAuthStatus(): Promise<boolean> {
     try {
       // 调用专门的认证状态检查端点

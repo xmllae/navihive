@@ -66,6 +66,113 @@ async function start(bindings = {}) {
 
 const request = (mf, path, options) => mf.dispatchFetch(`https://example.com/api/${path}`, options);
 
+test('account sidebar preference is shared between sessions, private and excluded from content imports', async () => {
+  const { mf, db } = await start({
+    AUTH_USERNAME: 'test-admin',
+    AUTH_PASSWORD: hashSync('test-password', 4),
+    AUTH_SECRET: 'local-regression-key-only',
+  });
+  const key = 'account-preference:test-admin:desktop-sidebar';
+  try {
+    assert.equal((await request(mf, 'preferences/desktop-sidebar')).status, 401);
+    assert.equal((await request(mf, 'preferences/desktop-sidebar', { method: 'PUT' })).status, 401);
+    await db
+      .prepare('INSERT INTO configs (key, value) VALUES (?, ?)')
+      .bind('account-preference:other-admin:desktop-sidebar', 'true')
+      .run();
+    const login = async () => {
+      const response = await request(mf, 'login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'test-admin', password: 'test-password' }),
+      });
+      assert.equal((await response.json()).success, true);
+      return {
+        Cookie: response.headers.get('set-cookie').split(';')[0],
+        'Content-Type': 'application/json',
+      };
+    };
+    const first = await login();
+    const second = await login();
+    assert.deepEqual(
+      await (await request(mf, 'preferences/desktop-sidebar', { headers: first })).json(),
+      { collapsed: false }
+    );
+    for (const body of [
+      { collapsed: 'true' },
+      { collapsed: true, username: 'other-admin' },
+      null,
+    ]) {
+      assert.equal(
+        (
+          await request(mf, 'preferences/desktop-sidebar', {
+            method: 'PUT',
+            headers: first,
+            body: JSON.stringify(body),
+          })
+        ).status,
+        400
+      );
+    }
+    for (const collapsed of [true, false, true]) {
+      const saved = await request(mf, 'preferences/desktop-sidebar', {
+        method: 'PUT',
+        headers: first,
+        body: JSON.stringify({ collapsed }),
+      });
+      assert.equal(saved.status, 200);
+      assert.deepEqual(
+        await (await request(mf, 'preferences/desktop-sidebar', { headers: second })).json(),
+        { collapsed }
+      );
+    }
+    const configs = await (await request(mf, 'configs')).json();
+    assert.ok(Object.keys(configs).every((name) => !name.startsWith('account-preference:')));
+    for (const method of ['GET', 'PUT', 'DELETE']) {
+      assert.equal(
+        (
+          await request(mf, `configs/${key}`, {
+            method,
+            headers: first,
+            ...(method === 'PUT' ? { body: JSON.stringify({ value: 'false' }) } : {}),
+          })
+        ).status,
+        403
+      );
+    }
+    const backup = await (await request(mf, 'export', { headers: first })).json();
+    assert.ok(Object.keys(backup.configs).every((name) => !name.startsWith('account-preference:')));
+    const imported = await request(mf, 'import', {
+      method: 'POST',
+      headers: first,
+      body: JSON.stringify({
+        version: '1.0',
+        exportDate: new Date().toISOString(),
+        groups: [],
+        sites: [],
+        configs: { [key]: 'false', 'site.title': 'Imported title' },
+      }),
+    });
+    assert.equal(imported.status, 200);
+    assert.equal((await imported.json()).success, true);
+    assert.deepEqual(
+      await (await request(mf, 'preferences/desktop-sidebar', { headers: second })).json(),
+      { collapsed: true }
+    );
+    assert.equal(
+      (
+        await db
+          .prepare('SELECT value FROM configs WHERE key = ?')
+          .bind('account-preference:other-admin:desktop-sidebar')
+          .first()
+      ).value,
+      'true'
+    );
+  } finally {
+    await mf.dispose();
+  }
+});
+
 test('missing credentials allow public reads but block login, writes and initialization', async () => {
   const { mf, db } = await start();
   try {

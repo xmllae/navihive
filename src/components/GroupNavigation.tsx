@@ -17,12 +17,26 @@ import { GroupWithSites } from '../types';
 interface GroupNavigationProps {
   groups: GroupWithSites[];
   onNavigate: (groupId: number) => void;
+  desktopCollapsed?: boolean;
+  onDesktopCollapsedChange?: (collapsed: boolean) => void;
+  savingDesktopPreference?: boolean;
 }
 
-export default function GroupNavigation({ groups, onNavigate }: GroupNavigationProps) {
+export default function GroupNavigation({
+  groups,
+  onNavigate,
+  desktopCollapsed: savedCollapsed,
+  onDesktopCollapsedChange,
+  savingDesktopPreference = false,
+}: GroupNavigationProps) {
   const isWideScreen = useMediaQuery('(min-width:1680px)');
   const [open, setOpen] = useState(false);
-  const [desktopCollapsed, setDesktopCollapsed] = useState(false);
+  const [localCollapsed, setLocalCollapsed] = useState(false);
+  const desktopCollapsed = savedCollapsed ?? localCollapsed;
+  const changeDesktopCollapsed = (collapsed: boolean) => {
+    if (onDesktopCollapsedChange) onDesktopCollapsedChange(collapsed);
+    else setLocalCollapsed(collapsed);
+  };
   const [activeGroupId, setActiveGroupId] = useState<number | null>(null);
 
   useEffect(() => {
@@ -67,7 +81,8 @@ export default function GroupNavigation({ groups, onNavigate }: GroupNavigationP
         </Typography>
         <IconButton
           aria-label={isWideScreen ? '收起分组导航' : '关闭分组导航'}
-          onClick={() => (isWideScreen ? setDesktopCollapsed(true) : setOpen(false))}
+          onClick={() => (isWideScreen ? changeDesktopCollapsed(true) : setOpen(false))}
+          disabled={isWideScreen && savingDesktopPreference}
           size='small'
         >
           <CloseIcon fontSize='small' />
@@ -121,7 +136,8 @@ export default function GroupNavigation({ groups, onNavigate }: GroupNavigationP
       <IconButton
         aria-label={isWideScreen ? '展开分组导航' : '打开分组导航'}
         aria-expanded={isWideScreen ? false : open}
-        onClick={() => (isWideScreen ? setDesktopCollapsed(false) : setOpen(true))}
+        onClick={() => (isWideScreen ? changeDesktopCollapsed(false) : setOpen(true))}
+        disabled={isWideScreen && savingDesktopPreference}
         color='primary'
         sx={{
           position: 'fixed',

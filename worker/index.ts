@@ -1,5 +1,6 @@
 import {
   NavigationAPI,
+  ACCOUNT_PREFERENCE_PREFIX,
   type LoginRequest,
   type ExportData,
   type Group,
@@ -591,6 +592,48 @@ export default {
         }
 
         // 路由匹配
+        if (path === 'preferences/desktop-sidebar') {
+          if (!isAuthenticated) {
+            return createJsonResponse({ message: '请先登录' }, request, { status: 401 });
+          }
+          if (method === 'GET') {
+            return createJsonResponse(await api.getDesktopSidebarPreference(), request);
+          }
+          if (method === 'PUT') {
+            const data: unknown = await validateRequestBody(request);
+            if (
+              !data ||
+              typeof data !== 'object' ||
+              Array.isArray(data) ||
+              Object.keys(data).length !== 1 ||
+              !('collapsed' in data) ||
+              typeof data.collapsed !== 'boolean'
+            ) {
+              return createJsonResponse({ message: 'collapsed 必须是布尔值' }, request, {
+                status: 400,
+              });
+            }
+            if (!(await api.setDesktopSidebarPreference(data.collapsed))) {
+              return createJsonResponse({ message: '侧栏状态保存失败' }, request, { status: 500 });
+            }
+            return createJsonResponse({ collapsed: data.collapsed }, request);
+          }
+          return createJsonResponse({ message: '方法不支持' }, request, {
+            status: 405,
+            headers: { Allow: 'GET, PUT' },
+          });
+        }
+        if (
+          path.startsWith('configs/') &&
+          decodeURIComponent(path.substring('configs/'.length)).startsWith(
+            ACCOUNT_PREFERENCE_PREFIX
+          )
+        ) {
+          return createJsonResponse({ message: '账号偏好请使用专用接口' }, request, {
+            status: 403,
+          });
+        }
+
         // 初始化会修改数据，必须经过上面的认证检查。
         if (path === 'init' && method === 'GET') {
           const initResult = await api.initDB();

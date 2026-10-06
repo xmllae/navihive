@@ -1,7 +1,7 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ComponentProps } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ComponentProps, StrictMode } from 'react';
 import { DndContext, DragEndEvent } from '@dnd-kit/core';
 import App from '../App';
 
@@ -12,6 +12,8 @@ const api = vi.hoisted(() => ({
   updateSiteOrder: vi.fn(),
   login: vi.fn(),
   logout: vi.fn(),
+  getDesktopSidebarPreference: vi.fn(),
+  setDesktopSidebarPreference: vi.fn(),
 }));
 vi.mock('../API/mock', () => ({
   MockNavigationClient: class {
@@ -21,6 +23,8 @@ vi.mock('../API/mock', () => ({
     updateSiteOrder = api.updateSiteOrder;
     login = api.login;
     logout = api.logout;
+    getDesktopSidebarPreference = api.getDesktopSidebarPreference;
+    setDesktopSidebarPreference = api.setDesktopSidebarPreference;
     isLoggedIn = () => false;
   },
 }));
@@ -59,6 +63,121 @@ beforeEach(() => {
   api.updateSiteOrder.mockReset();
   api.login.mockResolvedValue({ success: true });
   api.logout.mockResolvedValue(undefined);
+  api.getDesktopSidebarPreference.mockReset().mockResolvedValue({ collapsed: false });
+  api.setDesktopSidebarPreference
+    .mockReset()
+    .mockImplementation(async (collapsed: boolean) => ({ collapsed }));
+});
+afterEach(() => vi.restoreAllMocks());
+
+function useWideScreen() {
+  const matchMedia = window.matchMedia;
+  vi.spyOn(window, 'matchMedia').mockImplementation((query) => ({
+    ...matchMedia(query),
+    matches: query === '(min-width:1680px)',
+  }));
+}
+
+describe('账号侧栏偏好', () => {
+  it('忽略旧初始化的迟到认证结果，不覆盖当前账号偏好', async () => {
+    useWideScreen();
+    let finish!: (authenticated: boolean) => void;
+    api.checkAuthStatus.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finish = resolve;
+        })
+    );
+    api.getDesktopSidebarPreference.mockResolvedValue({ collapsed: true });
+    render(
+      <StrictMode>
+        <App />
+      </StrictMode>
+    );
+    await screen.findByRole('button', { name: '展开分组导航' });
+    await act(async () => finish(false));
+    expect(screen.getByRole('button', { name: '展开分组导航' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: '管理员登录' })).not.toBeInTheDocument();
+    expect(api.getDesktopSidebarPreference).toHaveBeenCalledTimes(1);
+    expect(api.getGroupsWithSites).toHaveBeenCalledTimes(1);
+  });
+
+  it('初始化读取收起状态，重新挂载读取展开状态，不自动写入', async () => {
+    useWideScreen();
+    api.getDesktopSidebarPreference.mockResolvedValueOnce({ collapsed: true });
+    const { unmount } = render(<App />);
+    await screen.findByRole('button', { name: '展开分组导航' });
+    expect(screen.queryByRole('navigation')).not.toBeInTheDocument();
+    unmount();
+    render(<App />);
+    await screen.findByRole('button', { name: '收起分组导航' });
+    expect(api.getDesktopSidebarPreference).toHaveBeenCalledTimes(2);
+    expect(api.setDesktopSidebarPreference).not.toHaveBeenCalled();
+  });
+
+  it('保存期间禁止再次切换，失败后恢复状态并允许重试', async () => {
+    useWideScreen();
+    let fail!: (reason: Error) => void;
+    api.setDesktopSidebarPreference.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          fail = reject;
+        })
+    );
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole('button', { name: '收起分组导航' }));
+    expect(screen.getByRole('button', { name: '展开分组导航' })).toBeDisabled();
+    await act(async () => fail(new Error('模拟保存失败')));
+    expect(await screen.findByRole('button', { name: '收起分组导航' })).toBeEnabled();
+    expect(screen.getByText('侧栏状态保存失败，请重试')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: '收起分组导航' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: '展开分组导航' })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: '展开分组导航' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: '收起分组导航' })).toBeEnabled());
+    expect(api.setDesktopSidebarPreference.mock.calls.map(([value]) => value)).toEqual([
+      true,
+      true,
+      false,
+    ]);
+  });
+
+  it('读取失败暂时展开且不覆盖云端，访客不读取或保存偏好', async () => {
+    useWideScreen();
+    api.getDesktopSidebarPreference.mockRejectedValueOnce(new Error('模拟读取失败'));
+    const user = userEvent.setup();
+    const { unmount } = render(<App />);
+    await screen.findByRole('button', { name: '收起分组导航' });
+    expect(screen.getByText('未能读取侧栏状态，暂时展开，请刷新重试')).toBeVisible();
+    expect(api.setDesktopSidebarPreference).not.toHaveBeenCalled();
+    unmount();
+    api.checkAuthStatus.mockResolvedValue(false);
+    render(<App />);
+    await user.click(await screen.findByRole('button', { name: '收起分组导航' }));
+    expect(api.getDesktopSidebarPreference).toHaveBeenCalledTimes(1);
+    expect(api.setDesktopSidebarPreference).not.toHaveBeenCalled();
+  });
+
+  it('退出登录重置展开，忽略此前保存请求的迟到失败', async () => {
+    useWideScreen();
+    api.getDesktopSidebarPreference.mockResolvedValue({ collapsed: true });
+    let fail!: (reason: Error) => void;
+    api.setDesktopSidebarPreference.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          fail = reject;
+        })
+    );
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole('button', { name: '展开分组导航' }));
+    await user.click(screen.getByRole('button', { name: '更多选项' }));
+    await user.click(screen.getByRole('menuitem', { name: '退出登录' }));
+    await screen.findByRole('button', { name: '管理员登录' });
+    await act(async () => fail(new Error('迟到失败')));
+    expect(screen.getByRole('button', { name: '收起分组导航' })).toBeEnabled();
+    expect(screen.queryByText('侧栏状态保存失败，请重试')).not.toBeInTheDocument();
+  });
 });
 
 describe('应用排序保存与导航', () => {
@@ -76,7 +195,9 @@ describe('应用排序保存与导航', () => {
   });
 
   it('访客登录、登出后重新加载数据，重新挂载重新检查认证', async () => {
+    useWideScreen();
     api.checkAuthStatus.mockResolvedValue(false);
+    api.getDesktopSidebarPreference.mockResolvedValue({ collapsed: true });
     const user = userEvent.setup();
     const { unmount } = render(<App />);
     await user.click(await screen.findByRole('button', { name: '管理员登录' }));
@@ -84,11 +205,14 @@ describe('应用排序保存与导航', () => {
     await user.type(screen.getByLabelText('密码', { exact: false }), 'test-password');
     await user.click(screen.getByRole('button', { name: '登录' }));
     await screen.findByRole('button', { name: '排序' });
+    expect(screen.getByRole('button', { name: '展开分组导航' })).toBeEnabled();
+    expect(api.getDesktopSidebarPreference).toHaveBeenCalledTimes(1);
     expect(api.login).toHaveBeenCalledWith('test-admin', 'test-password', false);
     expect(api.getGroupsWithSites).toHaveBeenCalledTimes(2);
     await user.click(screen.getByRole('button', { name: '更多选项' }));
     await user.click(screen.getByRole('menuitem', { name: '退出登录' }));
     await screen.findByRole('button', { name: '管理员登录' });
+    expect(screen.getByRole('button', { name: '收起分组导航' })).toBeEnabled();
     expect(api.logout).toHaveBeenCalledTimes(1);
     expect(api.getGroupsWithSites).toHaveBeenCalledTimes(3);
     expect(api.getConfigs).toHaveBeenCalledTimes(3);
