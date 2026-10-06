@@ -9,6 +9,28 @@ const groups = [
 ];
 
 describe('分组导航', () => {
+  it('宽屏导航默认展开，可以收起和重新展开，跳转后保持展开', async () => {
+    const matchMedia = window.matchMedia;
+    const mediaSpy = vi.spyOn(window, 'matchMedia').mockImplementation((query) => ({
+      ...matchMedia(query),
+      matches: query === '(min-width:1680px)',
+    }));
+    try {
+      const user = userEvent.setup();
+      const navigate = vi.fn();
+      render(<GroupNavigation groups={groups} onNavigate={navigate} />);
+      expect(screen.getByRole('navigation', { name: '分组导航' })).toBeVisible();
+      await user.click(screen.getByRole('button', { name: '收起分组导航' }));
+      expect(screen.queryByRole('navigation')).not.toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: '展开分组导航' }));
+      await user.click(screen.getByRole('button', { name: '工具 0' }));
+      expect(navigate).toHaveBeenCalledWith(2);
+      expect(screen.getByRole('navigation', { name: '分组导航' })).toBeVisible();
+    } finally {
+      mediaSpy.mockRestore();
+    }
+  });
+
   it('抽屉显示可见分组并跳转，点击后关闭', async () => {
     const user = userEvent.setup();
     const navigate = vi.fn();

@@ -22,6 +22,7 @@ interface GroupNavigationProps {
 export default function GroupNavigation({ groups, onNavigate }: GroupNavigationProps) {
   const isWideScreen = useMediaQuery('(min-width:1680px)');
   const [open, setOpen] = useState(false);
+  const [desktopCollapsed, setDesktopCollapsed] = useState(false);
   const [activeGroupId, setActiveGroupId] = useState<number | null>(null);
 
   useEffect(() => {
@@ -64,11 +65,13 @@ export default function GroupNavigation({ groups, onNavigate }: GroupNavigationP
         <Typography variant='subtitle1' fontWeight={600}>
           分组导航
         </Typography>
-        {!isWideScreen && (
-          <IconButton aria-label='关闭分组导航' onClick={() => setOpen(false)}>
-            <CloseIcon />
-          </IconButton>
-        )}
+        <IconButton
+          aria-label={isWideScreen ? '收起分组导航' : '关闭分组导航'}
+          onClick={() => (isWideScreen ? setDesktopCollapsed(true) : setOpen(false))}
+          size='small'
+        >
+          <CloseIcon fontSize='small' />
+        </IconButton>
       </Box>
       <List>
         {groups.map((group) => (
@@ -93,13 +96,13 @@ export default function GroupNavigation({ groups, onNavigate }: GroupNavigationP
     </Box>
   );
 
-  if (isWideScreen) {
+  if (isWideScreen && !desktopCollapsed) {
     return (
       <Paper
         elevation={2}
         sx={{
           position: 'fixed',
-          left: 'calc((100vw - 1200px) / 2 - 220px)',
+          left: 0,
           top: 32,
           width: 200,
           maxHeight: 'calc(100dvh - 64px)',
@@ -116,26 +119,27 @@ export default function GroupNavigation({ groups, onNavigate }: GroupNavigationP
   return (
     <>
       <IconButton
-        aria-label='打开分组导航'
-        aria-expanded={open}
-        onClick={() => setOpen(true)}
+        aria-label={isWideScreen ? '展开分组导航' : '打开分组导航'}
+        aria-expanded={isWideScreen ? false : open}
+        onClick={() => (isWideScreen ? setDesktopCollapsed(false) : setOpen(true))}
         color='primary'
         sx={{
           position: 'fixed',
           left: 12,
-          bottom: 24,
-          width: 48,
-          height: 48,
+          top: isWideScreen ? 32 : undefined,
+          bottom: isWideScreen ? undefined : 'calc(16px + env(safe-area-inset-bottom, 0px))',
+          width: 40,
+          height: 40,
           bgcolor: 'background.paper',
           boxShadow: 3,
           zIndex: (theme) => theme.zIndex.drawer - 1,
           '&:hover': { bgcolor: 'action.hover' },
         }}
       >
-        <MenuIcon />
+        <MenuIcon sx={{ fontSize: 20 }} />
       </IconButton>
       <Drawer
-        open={open}
+        open={!isWideScreen && open}
         onClose={() => setOpen(false)}
         ModalProps={{ disableRestoreFocus: true }}
         slotProps={{ paper: { sx: { width: 260, maxWidth: '85vw' } } }}

@@ -37,7 +37,6 @@ import {
   CircularProgress,
   Alert,
   Stack,
-  Paper,
   createTheme,
   ThemeProvider,
   CssBaseline,
@@ -62,7 +61,6 @@ import {
 import SortIcon from '@mui/icons-material/Sort';
 import SaveIcon from '@mui/icons-material/Save';
 import CancelIcon from '@mui/icons-material/Cancel';
-import GitHubIcon from '@mui/icons-material/GitHub';
 import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
 import SettingsIcon from '@mui/icons-material/Settings';
@@ -1800,41 +1798,6 @@ function App() {
               </Button>
             </DialogActions>
           </Dialog>
-
-          {/* GitHub角标 - 在移动端调整位置 */}
-          <Box
-            sx={{
-              position: 'fixed',
-              bottom: { xs: 8, sm: 16 },
-              right: { xs: 8, sm: 16 },
-              zIndex: 10,
-            }}
-          >
-            <Paper
-              component='a'
-              href='https://github.com/zqq-nuli/Navihive'
-              target='_blank'
-              rel='noopener noreferrer'
-              elevation={2}
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                p: 1,
-                borderRadius: 10,
-                bgcolor: 'background.paper',
-                color: 'text.secondary',
-                transition: 'all 0.3s ease-in-out',
-                '&:hover': {
-                  bgcolor: 'action.hover',
-                  color: 'text.primary',
-                  boxShadow: 4,
-                },
-                textDecoration: 'none',
-              }}
-            >
-              <GitHubIcon />
-            </Paper>
-          </Box>
         </Container>
       </Box>
     </ThemeProvider>

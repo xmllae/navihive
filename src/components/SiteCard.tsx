@@ -74,34 +74,35 @@ const SiteCard = memo(function SiteCard({
   // 卡片内容
   const cardContent = (
     <Box
+      className='site-card-hover-root'
+      onClick={handleCardClick}
       sx={{
         height: '100%',
         minWidth: 0,
         minHeight: { xs: 96, sm: 104 },
         position: 'relative',
-        transition: 'transform 0.3s ease-in-out',
+        cursor: isEditMode ? undefined : 'pointer',
         ...(!isEditMode && {
-          '&:hover': {
-            transform: 'translateY(-4px)',
+          '@media (hover: hover) and (pointer: fine)': {
+            '&:hover > .site-card-surface': {
+              transform: 'translateY(-4px)',
+              boxShadow: 5,
+            },
           },
         }),
       }}
     >
       <Card
+        className='site-card-surface'
         sx={{
           height: '100%',
           display: 'flex',
           flexDirection: 'column',
           borderRadius: 3,
-          transition: 'box-shadow 0.3s ease-in-out',
+          transition: 'transform 0.3s ease-in-out, box-shadow 0.3s ease-in-out',
           border: '1px solid',
           borderColor: 'divider',
           boxShadow: 2,
-          '&:hover': !isEditMode
-            ? {
-                boxShadow: 5,
-              }
-            : {},
           overflow: 'hidden',
           backgroundColor: (theme) =>
             theme.palette.mode === 'dark' ? 'rgba(33, 33, 33, 0.9)' : 'rgba(255, 255, 255, 0.9)',
@@ -200,7 +201,7 @@ const SiteCard = memo(function SiteCard({
             </Typography>
           </Box>
         ) : (
-          <CardActionArea onClick={handleCardClick} sx={{ height: '100%' }}>
+          <CardActionArea sx={{ height: '100%' }}>
             <CardContent
               sx={{
                 position: 'relative',
@@ -304,7 +305,7 @@ const SiteCard = memo(function SiteCard({
                     '&:hover': {
                       bgcolor: 'action.selected',
                     },
-                    '.MuiCardActionArea-root:hover &': {
+                    '.site-card-hover-root:hover &, .site-card-hover-root:focus-within &': {
                       opacity: 1,
                     },
                   }}
