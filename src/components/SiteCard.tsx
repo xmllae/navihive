@@ -1,7 +1,16 @@
 // src/components/SiteCard.tsx
-import { useState, memo, ReactNode } from 'react';
+import {
+  useState,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  memo,
+  ReactNode,
+  lazy,
+  Suspense,
+} from 'react';
 import { Site } from '../API/http';
-import SiteSettingsModal from './SiteSettingsModal';
+const SiteSettingsModal = lazy(() => import('./SiteSettingsModal'));
 // 引入Material UI组件
 import {
   Card,
@@ -38,6 +47,16 @@ const SiteCard = memo(function SiteCard({
   const [showSettings, setShowSettings] = useState(false);
   const [iconError, setIconError] = useState(!site.icon);
   const [imageLoaded, setImageLoaded] = useState(false);
+  const [iconPriority, setIconPriority] = useState(false);
+  const cardRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const rect = cardRef.current?.getBoundingClientRect();
+    setIconPriority(Boolean(rect && rect.bottom > 0 && rect.top < window.innerHeight));
+  }, [site.icon]);
+  useEffect(() => {
+    setIconError(!site.icon);
+    setImageLoaded(false);
+  }, [site.icon]);
 
   // 如果没有图标，使用首字母作为图标
   const fallbackIcon = site.name.charAt(0).toUpperCase();
@@ -75,6 +94,7 @@ const SiteCard = memo(function SiteCard({
   const cardContent = (
     <Box
       className='site-card-hover-root'
+      ref={cardRef}
       onClick={handleCardClick}
       sx={{
         height: '100%',
@@ -137,6 +157,9 @@ const SiteCard = memo(function SiteCard({
                   <Fade in={imageLoaded} timeout={500}>
                     <Box
                       component='img'
+                      loading={iconPriority ? 'eager' : 'lazy'}
+                      fetchPriority={iconPriority ? 'high' : 'auto'}
+                      decoding='async'
                       src={site.icon}
                       alt={site.name}
                       sx={{
@@ -228,6 +251,9 @@ const SiteCard = memo(function SiteCard({
                     <Fade in={imageLoaded} timeout={500}>
                       <Box
                         component='img'
+                        loading={iconPriority ? 'eager' : 'lazy'}
+                        fetchPriority={iconPriority ? 'high' : 'auto'}
+                        decoding='async'
                         src={site.icon}
                         alt={site.name}
                         sx={{
@@ -327,13 +353,15 @@ const SiteCard = memo(function SiteCard({
       {cardContent}
 
       {showSettings && (
-        <SiteSettingsModal
-          site={site}
-          onUpdate={onUpdate}
-          onDelete={onDelete}
-          onClose={handleCloseSettings}
-          iconApi={iconApi} // 传递iconApi给SiteSettingsModal
-        />
+        <Suspense fallback={null}>
+          <SiteSettingsModal
+            site={site}
+            onUpdate={onUpdate}
+            onDelete={onDelete}
+            onClose={handleCloseSettings}
+            iconApi={iconApi} // 传递iconApi给SiteSettingsModal
+          />
+        </Suspense>
       )}
     </>
   );

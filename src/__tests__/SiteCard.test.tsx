@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import SiteCard from '../components/SiteCard';
@@ -21,6 +21,15 @@ const props = { site, onUpdate: vi.fn(), onDelete: vi.fn() };
 afterEach(() => vi.restoreAllMocks());
 
 describe('卡片固定点击区域', () => {
+  it('图标懒加载和异步解码，加载失败恢复首字母占位', () => {
+    render(<SiteCard {...props} site={{ ...site, icon: 'https://example.com/icon.png' }} />);
+    const icon = screen.getByAltText(site.name);
+    expect(icon).toHaveAttribute('loading', 'lazy');
+    expect(icon).toHaveAttribute('decoding', 'async');
+    fireEvent.error(icon);
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
+    expect(screen.getByText('测')).toBeVisible();
+  });
   it('外层底部区域及卡片内容点击均仅打开网站一次', async () => {
     const open = vi.spyOn(window, 'open').mockImplementation(() => null);
     const user = userEvent.setup();
@@ -42,7 +51,7 @@ describe('卡片固定点击区域', () => {
     await user.keyboard(' ');
     expect(open).toHaveBeenCalledTimes(2);
     await user.click(screen.getByRole('button', { name: '网站设置' }));
-    expect(screen.getByRole('dialog', { name: '网站设置对话框' })).toBeVisible();
+    expect(await screen.findByRole('dialog', { name: '网站设置对话框' })).toBeVisible();
     expect(open).toHaveBeenCalledTimes(2);
   });
 

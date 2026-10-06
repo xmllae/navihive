@@ -1,41 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
+import Tooltip from './DeferredTooltip';
+import React, { useState, useEffect, memo, lazy, Suspense } from 'react';
 import { Site, Group } from '../API/http';
 import SiteCard from './SiteCard';
-import SortableSiteCard from './SortableSiteCard';
+import SiteGrid from './SiteGrid';
+const GroupFeedback = lazy(() => import('./GroupFeedback'));
+const SiteSortingGrid = lazy(() => import('./SiteSortingGrid'));
 import { GroupWithSites } from '../types';
-import EditGroupDialog from './EditGroupDialog';
-import {
-  DndContext,
-  DragOverlay,
-  closestCenter,
-  pointerWithin,
-  KeyboardSensor,
-  MouseSensor,
-  TouchSensor,
-  useSensor,
-  useSensors,
-  DragEndEvent,
-  DragStartEvent,
-} from '@dnd-kit/core';
-import {
-  arrayMove,
-  SortableContext,
-  sortableKeyboardCoordinates,
-  rectSortingStrategy,
-} from '@dnd-kit/sortable';
+const EditGroupDialog = lazy(() => import('./EditGroupDialog'));
 // 引入Material UI组件
-import {
-  Paper,
-  Typography,
-  Button,
-  Box,
-  IconButton,
-  Tooltip,
-  Snackbar,
-  Alert,
-  Collapse,
-} from '@mui/material';
+import { Paper, Typography, Button, Box, IconButton, Collapse } from '@mui/material';
 import SortIcon from '@mui/icons-material/Sort';
 import SaveIcon from '@mui/icons-material/Save';
 import AddIcon from '@mui/icons-material/Add';
@@ -77,8 +50,8 @@ const GroupCard: React.FC<GroupCardProps> = ({
 }) => {
   // 添加本地状态来管理站点排序
   const [sites, setSites] = useState<Site[]>(group.sites);
-  const [activeSiteId, setActiveSiteId] = useState<number | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [dragging, setDragging] = useState(false);
   // 添加编辑弹窗的状态
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   // 添加提示消息状态
@@ -106,44 +79,6 @@ const GroupCard: React.FC<GroupCardProps> = ({
     setIsCollapsed(!isCollapsed);
   };
 
-  // 配置传感器，支持鼠标、触摸和键盘操作
-  const sensors = useSensors(
-    useSensor(MouseSensor, {
-      activationConstraint: {
-        distance: 5, // 5px 的移动才激活拖拽，防止误触
-      },
-    }),
-    useSensor(TouchSensor, {
-      activationConstraint: {
-        delay: 250, // 延迟250ms激活，防止误触
-        tolerance: 5, // 容忍5px的移动
-      },
-    }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
-
-  // 站点拖拽结束处理函数
-  const handleSiteDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    setActiveSiteId(null);
-
-    if (!over) return;
-
-    if (active.id !== over.id) {
-      // 查找拖拽的站点索引
-      const oldIndex = sites.findIndex((site) => `site-${site.id}` === active.id);
-      const newIndex = sites.findIndex((site) => `site-${site.id}` === over.id);
-
-      if (oldIndex !== -1 && newIndex !== -1) {
-        // 更新本地站点顺序
-        const newSites = arrayMove(sites, oldIndex, newIndex);
-        setSites(newSites);
-      }
-    }
-  };
-
   // 编辑分组处理函数
   const handleEditClick = () => {
     setEditDialogOpen(true);
@@ -168,83 +103,29 @@ const GroupCard: React.FC<GroupCardProps> = ({
   // 判断是否为当前正在编辑的分组
   const isCurrentEditingGroup = sortMode === 'SiteSort' && currentSortingGroupId === group.id;
 
-  // 渲染站点卡片区域
   const renderSites = () => {
-    const sitesToRender = isCurrentEditingGroup ? sites : group.sites;
-    const activeSite = sites.find((site) => site.id === activeSiteId);
-    const grid = (
-      <Box
-        data-site-grid
-        sx={{
-          display: 'grid',
-          gridTemplateColumns: {
-            xs: 'repeat(1, minmax(0, 1fr))',
-            sm: 'repeat(2, minmax(0, 1fr))',
-            md: 'repeat(3, minmax(0, 1fr))',
-            lg: 'repeat(4, minmax(0, 1fr))',
-            xl: 'repeat(5, minmax(0, 1fr))',
-          },
-          gap: 2,
-          gridAutoRows: '1fr',
-        }}
-      >
-        {sitesToRender.map((site) => {
-          const props = {
-            site,
-            onUpdate,
-            onDelete,
-            viewMode,
-            iconApi: configs?.['site.iconApi'],
-          };
-          return isCurrentEditingGroup ? (
-            <SortableSiteCard key={site.id} {...props} disabled={isSaving} />
-          ) : (
-            <Box key={site.id} data-site-id={site.id} sx={{ minWidth: 0, height: '100%' }}>
-              <SiteCard {...props} />
-            </Box>
-          );
-        })}
-      </Box>
+    const cardProps = { onUpdate, onDelete, viewMode, iconApi: configs?.['site.iconApi'] };
+    const normalGrid = (
+      <SiteGrid>
+        {group.sites.map((site) => (
+          <Box key={site.id} data-site-id={site.id} sx={{ minWidth: 0, height: '100%' }}>
+            <SiteCard site={site} {...cardProps} />
+          </Box>
+        ))}
+      </SiteGrid>
     );
-
-    if (!isCurrentEditingGroup) return grid;
-
-    return (
-      <DndContext
-        sensors={sensors}
-        autoScroll={{ threshold: { x: 0.05, y: 0.05 } }}
-        collisionDetection={(args) =>
-          args.pointerCoordinates ? pointerWithin(args) : closestCenter(args)
-        }
-        onDragStart={(event: DragStartEvent) => {
-          const site = sites.find((item) => `site-${item.id}` === event.active.id);
-          setActiveSiteId(site?.id ?? null);
-        }}
-        onDragEnd={handleSiteDragEnd}
-        onDragCancel={() => setActiveSiteId(null)}
-      >
-        <SortableContext
-          items={sitesToRender.map((site) => `site-${site.id}`)}
-          strategy={rectSortingStrategy}
-        >
-          {grid}
-        </SortableContext>
-        {createPortal(
-          <DragOverlay dropAnimation={null}>
-            {activeSite ? (
-              <SiteCard
-                site={activeSite}
-                onUpdate={onUpdate}
-                onDelete={onDelete}
-                isEditMode
-                viewMode={viewMode}
-                iconApi={configs?.['site.iconApi']}
-              />
-            ) : null}
-          </DragOverlay>,
-          document.body
-        )}
-      </DndContext>
+    return isCurrentEditingGroup ? (
+      <Suspense fallback={normalGrid}>
+        <SiteSortingGrid
+          sites={sites}
+          onReorder={setSites}
+          isSaving={isSaving}
+          cardProps={cardProps}
+          onDraggingChange={setDragging}
+        />
+      </Suspense>
+    ) : (
+      normalGrid
     );
   };
 
@@ -274,7 +155,6 @@ const GroupCard: React.FC<GroupCardProps> = ({
     }
     // 确保分组展开
     setSites([...group.sites]);
-    setActiveSiteId(null);
     if (isCollapsed) {
       setIsCollapsed(false);
     }
@@ -369,7 +249,7 @@ const GroupCard: React.FC<GroupCardProps> = ({
               size='small'
               startIcon={<SaveIcon />}
               onClick={handleSaveSiteOrder}
-              disabled={isSaving || activeSiteId !== null}
+              disabled={isSaving || dragging}
               sx={{
                 minWidth: 'auto',
                 fontSize: { xs: '0.75rem', sm: '0.875rem' },
@@ -429,29 +309,35 @@ const GroupCard: React.FC<GroupCardProps> = ({
       </Box>
 
       {/* 使用 Collapse 组件包装站点卡片区域 */}
-      <Collapse in={!isCollapsed} timeout='auto'>
+      <Collapse in={!isCollapsed} timeout='auto' mountOnEnter unmountOnExit>
         {renderSites()}
       </Collapse>
 
       {/* 编辑分组弹窗 */}
-      {onUpdateGroup && onDeleteGroup && (
-        <EditGroupDialog
-          open={editDialogOpen}
-          group={group}
-          onClose={() => setEditDialogOpen(false)}
-          onSave={handleUpdateGroup}
-          onDelete={handleDeleteGroup}
-        />
+      {editDialogOpen && onUpdateGroup && onDeleteGroup && (
+        <Suspense fallback={null}>
+          <EditGroupDialog
+            open={editDialogOpen}
+            group={group}
+            onClose={() => setEditDialogOpen(false)}
+            onSave={handleUpdateGroup}
+            onDelete={handleDeleteGroup}
+          />
+        </Suspense>
       )}
 
       {/* 提示消息 */}
-      <Snackbar open={snackbarOpen} autoHideDuration={6000} onClose={handleCloseSnackbar}>
-        <Alert onClose={handleCloseSnackbar} severity='info' sx={{ width: '100%' }}>
-          {snackbarMessage}
-        </Alert>
-      </Snackbar>
+      {snackbarOpen && (
+        <Suspense fallback={null}>
+          <GroupFeedback
+            snackbarOpen={snackbarOpen}
+            handleCloseSnackbar={handleCloseSnackbar}
+            snackbarMessage={snackbarMessage}
+          />
+        </Suspense>
+      )}
     </Paper>
   );
 };
 
-export default GroupCard;
+export default memo(GroupCard);

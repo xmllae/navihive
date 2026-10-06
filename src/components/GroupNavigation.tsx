@@ -1,7 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, lazy, Suspense } from 'react';
 import {
   Box,
-  Drawer,
   IconButton,
   List,
   ListItemButton,
@@ -13,6 +12,7 @@ import {
 import MenuIcon from '@mui/icons-material/Menu';
 import CloseIcon from '@mui/icons-material/Close';
 import { GroupWithSites } from '../types';
+const NavigationDrawer = lazy(() => import('./NavigationDrawer'));
 
 interface GroupNavigationProps {
   groups: GroupWithSites[];
@@ -154,14 +154,11 @@ export default function GroupNavigation({
       >
         <MenuIcon sx={{ fontSize: 20 }} />
       </IconButton>
-      <Drawer
-        open={!isWideScreen && open}
-        onClose={() => setOpen(false)}
-        ModalProps={{ disableRestoreFocus: true }}
-        slotProps={{ paper: { sx: { width: 260, maxWidth: '85vw' } } }}
-      >
-        {navigation}
-      </Drawer>
+      {!isWideScreen && open && (
+        <Suspense fallback={null}>
+          <NavigationDrawer onClose={() => setOpen(false)}>{navigation}</NavigationDrawer>
+        </Suspense>
+      )}
     </>
   );
 }

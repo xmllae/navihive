@@ -1,9 +1,10 @@
+import Tooltip from './DeferredTooltip';
 /**
  * 搜索框组件
  * 支持站内搜索和站外搜索引擎跳转
  */
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
 import {
   Paper,
   InputBase,
@@ -11,12 +12,7 @@ import {
   Box,
   ToggleButtonGroup,
   ToggleButton,
-  Menu,
-  MenuItem,
-  Tooltip,
   Avatar,
-  ListItemIcon,
-  ListItemText,
   Divider,
   Chip,
 } from '@mui/material';
@@ -26,12 +22,11 @@ import {
   TravelExplore as GlobalIcon,
   HomeWork as LocalIcon,
   ExpandMore as ExpandMoreIcon,
-  Check as CheckIcon,
 } from '@mui/icons-material';
-import SearchResultPanel from './SearchResultPanel';
+const SearchResultPanel = lazy(() => import('./SearchResultPanel'));
+const SearchEngineMenu = lazy(() => import('./SearchEngineMenu'));
 import { searchInternal, type SearchResultItem } from '../utils/search';
 import {
-  SEARCH_ENGINES,
   getDefaultSearchEngine,
   getSearchEngineByKey,
   buildSearchUrl,
@@ -270,31 +265,16 @@ const SearchBox: React.FC<SearchBoxProps> = ({ groups, sites, onInternalResultCl
                   <ExpandMoreIcon fontSize='small' />
                 </IconButton>
               </Tooltip>
-              <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={handleEngineMenuClose}>
-                {SEARCH_ENGINES.map((engine) => (
-                  <MenuItem
-                    key={engine.key}
-                    onClick={() => handleEngineSelect(engine)}
-                    selected={engine.key === selectedEngine.key}
-                  >
-                    <ListItemIcon>
-                      {engine.icon ? (
-                        <Avatar
-                          src={engine.icon}
-                          sx={{ width: 24, height: 24 }}
-                          alt={engine.name}
-                        />
-                      ) : (
-                        <SearchIcon fontSize='small' />
-                      )}
-                    </ListItemIcon>
-                    <ListItemText>{engine.name}</ListItemText>
-                    {engine.key === selectedEngine.key && (
-                      <CheckIcon fontSize='small' color='primary' />
-                    )}
-                  </MenuItem>
-                ))}
-              </Menu>
+              {anchorEl && (
+                <Suspense fallback={null}>
+                  <SearchEngineMenu
+                    anchorEl={anchorEl}
+                    handleEngineMenuClose={handleEngineMenuClose}
+                    handleEngineSelect={handleEngineSelect}
+                    selectedEngine={selectedEngine}
+                  />
+                </Suspense>
+              )}
               <Divider orientation='vertical' flexItem sx={{ mx: 1 }} />
             </>
           )}
@@ -345,13 +325,15 @@ const SearchBox: React.FC<SearchBoxProps> = ({ groups, sites, onInternalResultCl
       </Box>
 
       {/* 站内搜索结果面板 */}
-      {mode === 'internal' && (
-        <SearchResultPanel
-          results={results}
-          query={query}
-          onResultClick={handleResultClick}
-          open={showResults}
-        />
+      {mode === 'internal' && showResults && query && results.length > 0 && (
+        <Suspense fallback={null}>
+          <SearchResultPanel
+            results={results}
+            query={query}
+            onResultClick={handleResultClick}
+            open={showResults}
+          />
+        </Suspense>
       )}
     </Box>
   );

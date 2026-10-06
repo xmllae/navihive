@@ -76,6 +76,14 @@ export interface DesktopSidebarPreference {
   collapsed: boolean;
 }
 
+export interface BootstrapData {
+  authenticated: boolean;
+  groups: GroupWithSites[];
+  configs: Record<string, string>;
+  desktopSidebarPreference: DesktopSidebarPreference | null;
+  desktopSidebarPreferenceError: string | null;
+}
+
 // 扩展导出数据接口，添加导入结果类型
 export interface ExportData {
   groups: Group[];
@@ -475,7 +483,7 @@ export class NavigationAPI {
    * 获取所有分组及其站点 (使用 JOIN 优化,避免 N+1 查询)
    * 返回格式: GroupWithSites[] (每个分组包含其站点数组)
    */
-  async getGroupsWithSites(): Promise<GroupWithSites[]> {
+  async getGroupsWithSites(publicOnly = false): Promise<GroupWithSites[]> {
     // 使用 LEFT JOIN 一次性获取所有数据
     const query = `
       SELECT
@@ -496,7 +504,8 @@ export class NavigationAPI {
         s.created_at as site_created_at,
         s.updated_at as site_updated_at
       FROM groups g
-      LEFT JOIN sites s ON g.id = s.group_id
+      LEFT JOIN sites s ON g.id = s.group_id ${publicOnly ? 'AND s.is_public = 1' : ''}
+      ${publicOnly ? 'WHERE g.is_public = 1' : ''}
       ORDER BY g.order_num ASC, s.order_num ASC
     `;
 

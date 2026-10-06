@@ -1,5 +1,6 @@
+import Tooltip from './DeferredTooltip';
 // src/components/ThemeToggle.tsx
-import { IconButton, Tooltip } from '@mui/material';
+import { IconButton } from '@mui/material';
 import Brightness4Icon from '@mui/icons-material/Brightness4';
 import Brightness7Icon from '@mui/icons-material/Brightness7';
 

@@ -180,6 +180,22 @@ export class MockNavigationClient {
     return false;
   }
 
+  async getBootstrap() {
+    const authenticated = await this.checkAuthStatus();
+    const [groups, configs, desktopSidebarPreference] = await Promise.all([
+      this.getGroupsWithSites(),
+      this.getConfigs(),
+      authenticated ? this.getDesktopSidebarPreference() : Promise.resolve(null),
+    ]);
+    return {
+      authenticated,
+      groups,
+      configs,
+      desktopSidebarPreference,
+      desktopSidebarPreferenceError: null,
+    };
+  }
+
   async getGroups(): Promise<Group[]> {
     // 模拟网络延迟
     await new Promise((resolve) => setTimeout(resolve, 200));

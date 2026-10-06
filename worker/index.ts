@@ -84,6 +84,7 @@ const loginRateLimiter = new SimpleRateLimiter(5, 15);
  * 只读路由白名单 - 这些路由在 AUTH_REQUIRED_FOR_READ=false 时无需认证
  */
 const READ_ONLY_ROUTES = [
+  { method: 'GET', path: '/api/bootstrap' },
   { method: 'GET', path: '/api/groups' },
   { method: 'GET', path: '/api/sites' },
   { method: 'GET', path: '/api/configs' },
@@ -314,6 +315,7 @@ function createJsonResponse(data: unknown, request: Request, options: ResponseIn
     ...options,
     headers: {
       ...corsHeaders,
+      'Cache-Control': 'no-store',
       ...(options.headers as Record<string, string>),
     },
   });
@@ -333,6 +335,7 @@ function createResponse(
     ...options,
     headers: {
       ...corsHeaders,
+      'Cache-Control': 'no-store',
       ...(options.headers as Record<string, string>),
     },
   });
@@ -592,6 +595,29 @@ export default {
         }
 
         // 路由匹配
+        if (path === 'bootstrap' && method === 'GET') {
+          const preference = isAuthenticated
+            ? api.getDesktopSidebarPreference().then(
+                (value) => ({ value, error: null }),
+                () => ({ value: null, error: '未能读取侧栏状态，暂时展开，请刷新重试' })
+              )
+            : Promise.resolve({ value: null, error: null });
+          const [groups, configs, sidebar] = await Promise.all([
+            api.getGroupsWithSites(!isAuthenticated),
+            api.getConfigs(),
+            preference,
+          ]);
+          return createJsonResponse(
+            {
+              authenticated: isAuthenticated,
+              groups,
+              configs,
+              desktopSidebarPreference: sidebar.value,
+              desktopSidebarPreferenceError: sidebar.error,
+            },
+            request
+          );
+        }
         if (path === 'preferences/desktop-sidebar') {
           if (!isAuthenticated) {
             return createJsonResponse({ message: '请先登录' }, request, { status: 401 });
@@ -647,21 +673,7 @@ export default {
 
         // GET /api/groups-with-sites 获取所有分组及其站点 (优化 N+1 查询)
         if (path === 'groups-with-sites' && method === 'GET') {
-          const groupsWithSites = await api.getGroupsWithSites();
-
-          // 根据认证状态过滤数据
-          if (!isAuthenticated) {
-            // 未认证用户只能看到公开分组下的公开站点
-            const filteredGroups = groupsWithSites
-              .filter((group) => group.is_public === 1)
-              .map((group) => ({
-                ...group,
-                sites: group.sites.filter((site) => site.is_public === 1),
-              }));
-            return createJsonResponse(filteredGroups, request);
-          }
-
-          return createJsonResponse(groupsWithSites, request);
+          return createJsonResponse(await api.getGroupsWithSites(!isAuthenticated), request);
         }
         // GET /api/groups 获取所有分组
         else if (path === 'groups' && method === 'GET') {

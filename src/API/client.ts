@@ -6,6 +6,7 @@ import {
   ImportResult,
   GroupWithSites,
   DesktopSidebarPreference,
+  BootstrapData,
 } from './http';
 
 export class NavigationClient {
@@ -81,6 +82,7 @@ export class NavigationClient {
     const response = await fetch(`${this.baseUrl}/${endpoint}`, {
       headers,
       credentials: 'include', // 重要：自动包含 Cookie
+      cache: 'no-store',
       ...options,
     });
 
@@ -88,7 +90,7 @@ export class NavigationClient {
       // 认证失败
       this.isAuthenticated = false;
 
-      if (endpoint === 'preferences/desktop-sidebar') {
+      if (endpoint === 'preferences/desktop-sidebar' || endpoint === 'bootstrap') {
         throw new Error('认证已过期或无效，请重新登录');
       }
 
@@ -120,6 +122,12 @@ export class NavigationClient {
   }
 
   // 检查身份验证状态
+  async getBootstrap(): Promise<BootstrapData> {
+    const data: BootstrapData = await this.request('bootstrap');
+    this.isAuthenticated = data.authenticated;
+    return data;
+  }
+
   async getDesktopSidebarPreference(): Promise<DesktopSidebarPreference> {
     return this.request('preferences/desktop-sidebar');
   }

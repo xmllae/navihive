@@ -1,4 +1,4 @@
-import { act, render, screen, within } from '@testing-library/react';
+import { act, render, screen, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ComponentProps } from 'react';
@@ -52,6 +52,23 @@ function moveFirstToLast() {
 }
 
 describe('分组卡片排序', () => {
+  it('编辑入口始终可用，弹窗仅在点击后加载', async () => {
+    const user = userEvent.setup();
+    render(<GroupCard {...props} onUpdateGroup={vi.fn()} onDeleteGroup={vi.fn()} />);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '编辑分组' }));
+    expect(await screen.findByRole('dialog')).toBeVisible();
+  });
+  it('折叠时不挂载卡片，展开后恢复', async () => {
+    localStorage.setItem('group-1-collapsed', 'true');
+    const user = userEvent.setup();
+    render(<GroupCard {...props} />);
+    expect(screen.queryByText('网站 1')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '展开分组 个人网站' }));
+    expect(await screen.findByText('网站 1')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: '折叠分组 个人网站' }));
+    await waitFor(() => expect(screen.queryByText('网站 1')).not.toBeInTheDocument());
+  });
   it('排序其他分组时仍显示本站点', () => {
     render(<GroupCard {...props} sortMode='SiteSort' currentSortingGroupId={2} />);
     expect(screen.getByText('网站 1')).toBeVisible();
@@ -66,6 +83,7 @@ describe('分组卡片排序', () => {
     rerender(
       <GroupCard {...props} onSaveSiteOrder={save} sortMode='SiteSort' currentSortingGroupId={1} />
     );
+    await screen.findByRole('button', { name: '拖动 网站 1' });
     moveFirstToLast();
     expect(
       [...container.querySelectorAll('[data-site-id]')].map((e) => e.getAttribute('data-site-id'))
@@ -98,7 +116,7 @@ describe('分组卡片排序', () => {
     rerender(
       <GroupCard {...props} group={updated} sortMode='SiteSort' currentSortingGroupId={1} />
     );
-    expect(screen.getByRole('button', { name: '拖动 新卡片' })).toBeVisible();
+    expect(await screen.findByRole('button', { name: '拖动 新卡片' })).toBeVisible();
   });
 
   it('保存中防止重复提交，失败后保留草稿供重试', async () => {
@@ -113,6 +131,7 @@ describe('分组卡片排序', () => {
     render(
       <GroupCard {...props} sortMode='SiteSort' currentSortingGroupId={1} onSaveSiteOrder={save} />
     );
+    await screen.findByRole('button', { name: '拖动 网站 1' });
     moveFirstToLast();
     await user.click(screen.getByRole('button', { name: '保存顺序' }));
     expect(screen.getByRole('button', { name: '保存顺序' })).toBeDisabled();

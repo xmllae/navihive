@@ -66,6 +66,32 @@ async function start(bindings = {}) {
 
 const request = (mf, path, options) => mf.dispatchFetch(`https://example.com/api/${path}`, options);
 
+test('bootstrap reads fresh content and retains public groups with no public sites', async () => {
+  const { mf, db } = await start();
+  try {
+    await db
+      .prepare('INSERT INTO groups (id,name,order_num,is_public) VALUES (3, ?, 2, 1)')
+      .bind('Public empty group')
+      .run();
+    await db
+      .prepare('INSERT INTO sites (group_id,name,url,order_num,is_public) VALUES (3, ?, ?, 0, 0)')
+      .bind('Private only site', 'https://example.com')
+      .run();
+    const first = await (await request(mf, 'bootstrap')).json();
+    assert.deepEqual(
+      first.groups.map((group) => group.id),
+      [1, 3]
+    );
+    assert.deepEqual(first.groups[1].sites, []);
+    await db.prepare('UPDATE sites SET name = ? WHERE id = 1').bind('Updated public site').run();
+    const second = await (await request(mf, 'bootstrap')).json();
+    assert.equal(second.groups[0].sites[0].name, 'Updated public site');
+    assert.equal(second.authenticated, false);
+  } finally {
+    await mf.dispose();
+  }
+});
+
 test('account sidebar preference is shared between sessions, private and excluded from content imports', async () => {
   const { mf, db } = await start({
     AUTH_USERNAME: 'test-admin',
@@ -94,6 +120,21 @@ test('account sidebar preference is shared between sessions, private and exclude
     };
     const first = await login();
     const second = await login();
+    const bootstrap = await request(mf, 'bootstrap', { headers: first });
+    assert.equal(bootstrap.headers.get('Cache-Control'), 'no-store');
+    const initial = await bootstrap.json();
+    assert.equal(initial.authenticated, true);
+    assert.deepEqual(
+      initial.groups.map((group) => group.id),
+      [1, 2]
+    );
+    assert.deepEqual(
+      initial.groups[0].sites.map((site) => site.id),
+      [1, 2]
+    );
+    assert.deepEqual(initial.desktopSidebarPreference, { collapsed: false });
+    assert.equal(initial.desktopSidebarPreferenceError, null);
+    assert.ok(!Object.keys(initial.configs).some((key) => key.startsWith('account-preference:')));
     assert.deepEqual(
       await (await request(mf, 'preferences/desktop-sidebar', { headers: first })).json(),
       { collapsed: false }
@@ -177,8 +218,25 @@ test('missing credentials allow public reads but block login, writes and initial
   const { mf, db } = await start();
   try {
     const status = await request(mf, 'auth/status');
+    assert.equal(status.headers.get('Cache-Control'), 'no-store');
     assert.equal(status.status, 200);
     assert.deepEqual(await status.json(), { authenticated: false });
+    const bootstrap = await request(mf, 'bootstrap', { headers: { Cookie: 'auth_token=invalid' } });
+    assert.equal(bootstrap.status, 200);
+    assert.equal(bootstrap.headers.get('Cache-Control'), 'no-store');
+    const initial = await bootstrap.json();
+    assert.equal(initial.authenticated, false);
+    assert.deepEqual(
+      initial.groups.map((group) => group.id),
+      [1]
+    );
+    assert.deepEqual(
+      initial.groups[0].sites.map((site) => site.id),
+      [1]
+    );
+    assert.equal(initial.configs['site.title'], 'API regression fixture');
+    assert.equal(initial.desktopSidebarPreference, null);
+    assert.equal(initial.desktopSidebarPreferenceError, null);
     const groups = await request(mf, 'groups-with-sites', {
       headers: { Cookie: 'auth_token=invalid' },
     });

@@ -21,7 +21,7 @@ describe('分组导航', () => {
       />
     );
     await user.click(screen.getByRole('button', { name: '打开分组导航' }));
-    await user.click(screen.getByRole('button', { name: '关闭分组导航' }));
+    await user.click(await screen.findByRole('button', { name: '关闭分组导航' }));
     await waitFor(() => expect(screen.queryByRole('navigation')).not.toBeInTheDocument());
     expect(change).not.toHaveBeenCalled();
   });

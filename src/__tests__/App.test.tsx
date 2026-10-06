@@ -6,6 +6,7 @@ import { DndContext, DragEndEvent } from '@dnd-kit/core';
 import App from '../App';
 
 const api = vi.hoisted(() => ({
+  getBootstrap: vi.fn(),
   checkAuthStatus: vi.fn(),
   getGroupsWithSites: vi.fn(),
   getConfigs: vi.fn(),
@@ -17,6 +18,7 @@ const api = vi.hoisted(() => ({
 }));
 vi.mock('../API/mock', () => ({
   MockNavigationClient: class {
+    getBootstrap = api.getBootstrap;
     checkAuthStatus = api.checkAuthStatus;
     getGroupsWithSites = api.getGroupsWithSites;
     getConfigs = api.getConfigs;
@@ -57,12 +59,36 @@ const group = {
 };
 
 beforeEach(() => {
+  api.getBootstrap.mockReset().mockImplementation(async () => {
+    const authenticated = await api.checkAuthStatus();
+    let desktopSidebarPreference = null;
+    let desktopSidebarPreferenceError = null;
+    if (authenticated) {
+      try {
+        desktopSidebarPreference = await api.getDesktopSidebarPreference();
+      } catch {
+        desktopSidebarPreferenceError = '未能读取侧栏状态，暂时展开，请刷新重试';
+      }
+    }
+    return {
+      authenticated,
+      groups: await api.getGroupsWithSites(),
+      configs: await api.getConfigs(),
+      desktopSidebarPreference,
+      desktopSidebarPreferenceError,
+    };
+  });
   api.checkAuthStatus.mockResolvedValue(true);
   api.getGroupsWithSites.mockResolvedValue([group]);
   api.getConfigs.mockResolvedValue({ 'site.searchBoxEnabled': 'false' });
   api.updateSiteOrder.mockReset();
-  api.login.mockResolvedValue({ success: true });
-  api.logout.mockResolvedValue(undefined);
+  api.login.mockImplementation(async () => {
+    api.checkAuthStatus.mockResolvedValue(true);
+    return { success: true };
+  });
+  api.logout.mockImplementation(async () => {
+    api.checkAuthStatus.mockResolvedValue(false);
+  });
   api.getDesktopSidebarPreference.mockReset().mockResolvedValue({ collapsed: false });
   api.setDesktopSidebarPreference
     .mockReset()
@@ -99,7 +125,7 @@ describe('账号侧栏偏好', () => {
     expect(screen.getByRole('button', { name: '展开分组导航' })).toBeEnabled();
     expect(screen.queryByRole('button', { name: '管理员登录' })).not.toBeInTheDocument();
     expect(api.getDesktopSidebarPreference).toHaveBeenCalledTimes(1);
-    expect(api.getGroupsWithSites).toHaveBeenCalledTimes(1);
+    expect(api.getBootstrap).toHaveBeenCalledTimes(2);
   });
 
   it('初始化读取收起状态，重新挂载读取展开状态，不自动写入', async () => {
@@ -130,7 +156,7 @@ describe('账号侧栏偏好', () => {
     expect(screen.getByRole('button', { name: '展开分组导航' })).toBeDisabled();
     await act(async () => fail(new Error('模拟保存失败')));
     expect(await screen.findByRole('button', { name: '收起分组导航' })).toBeEnabled();
-    expect(screen.getByText('侧栏状态保存失败，请重试')).toBeVisible();
+    expect(await screen.findByText('侧栏状态保存失败，请重试')).toBeVisible();
     await user.click(screen.getByRole('button', { name: '收起分组导航' }));
     await waitFor(() => expect(screen.getByRole('button', { name: '展开分组导航' })).toBeEnabled());
     await user.click(screen.getByRole('button', { name: '展开分组导航' }));
@@ -172,7 +198,7 @@ describe('账号侧栏偏好', () => {
     render(<App />);
     await user.click(await screen.findByRole('button', { name: '展开分组导航' }));
     await user.click(screen.getByRole('button', { name: '更多选项' }));
-    await user.click(screen.getByRole('menuitem', { name: '退出登录' }));
+    await user.click(await screen.findByRole('menuitem', { name: '退出登录' }));
     await screen.findByRole('button', { name: '管理员登录' });
     await act(async () => fail(new Error('迟到失败')));
     expect(screen.getByRole('button', { name: '收起分组导航' })).toBeEnabled();
@@ -181,6 +207,14 @@ describe('账号侧栏偏好', () => {
 });
 
 describe('应用排序保存与导航', () => {
+  it('Bootstrap 失败显示错误，不保留私有内容或自动写入偏好', async () => {
+    api.getBootstrap.mockRejectedValueOnce(new Error('API错误: 500'));
+    render(<App />);
+    expect(await screen.findByText('加载数据失败: API错误: 500')).toBeVisible();
+    expect(screen.queryByText('网站 1')).not.toBeInTheDocument();
+    expect(api.getBootstrap).toHaveBeenCalledTimes(1);
+    expect(api.setDesktopSidebarPreference).not.toHaveBeenCalled();
+  });
   it('初始化后重新渲染不重复认证或数据加载', async () => {
     const { rerender } = render(<App />);
     await screen.findByRole('button', { name: '排序' });
@@ -192,6 +226,7 @@ describe('应用排序保存与导航', () => {
     expect(api.checkAuthStatus).toHaveBeenCalledTimes(1);
     expect(api.getGroupsWithSites).toHaveBeenCalledTimes(1);
     expect(api.getConfigs).toHaveBeenCalledTimes(1);
+    expect(api.getBootstrap).toHaveBeenCalledTimes(1);
   });
 
   it('访客登录、登出后重新加载数据，重新挂载重新检查认证', async () => {
@@ -201,7 +236,7 @@ describe('应用排序保存与导航', () => {
     const user = userEvent.setup();
     const { unmount } = render(<App />);
     await user.click(await screen.findByRole('button', { name: '管理员登录' }));
-    await user.type(screen.getByLabelText('用户名', { exact: false }), 'test-admin');
+    await user.type(await screen.findByLabelText('用户名', { exact: false }), 'test-admin');
     await user.type(screen.getByLabelText('密码', { exact: false }), 'test-password');
     await user.click(screen.getByRole('button', { name: '登录' }));
     await screen.findByRole('button', { name: '排序' });
@@ -210,17 +245,17 @@ describe('应用排序保存与导航', () => {
     expect(api.login).toHaveBeenCalledWith('test-admin', 'test-password', false);
     expect(api.getGroupsWithSites).toHaveBeenCalledTimes(2);
     await user.click(screen.getByRole('button', { name: '更多选项' }));
-    await user.click(screen.getByRole('menuitem', { name: '退出登录' }));
+    await user.click(await screen.findByRole('menuitem', { name: '退出登录' }));
     await screen.findByRole('button', { name: '管理员登录' });
     expect(screen.getByRole('button', { name: '收起分组导航' })).toBeEnabled();
     expect(api.logout).toHaveBeenCalledTimes(1);
     expect(api.getGroupsWithSites).toHaveBeenCalledTimes(3);
     expect(api.getConfigs).toHaveBeenCalledTimes(3);
-    expect(api.checkAuthStatus).toHaveBeenCalledTimes(1);
+    expect(api.checkAuthStatus).toHaveBeenCalledTimes(3);
     unmount();
     render(<App />);
     await screen.findByRole('button', { name: '管理员登录' });
-    expect(api.checkAuthStatus).toHaveBeenCalledTimes(2);
+    expect(api.checkAuthStatus).toHaveBeenCalledTimes(4);
     expect(api.getGroupsWithSites).toHaveBeenCalledTimes(4);
   });
 
@@ -228,6 +263,7 @@ describe('应用排序保存与导航', () => {
     const user = userEvent.setup();
     const { container } = render(<App />);
     await user.click(await screen.findByRole('button', { name: '排序' }));
+    await screen.findByRole('button', { name: '拖动 网站 1' });
     act(() => dragEnd?.({ active: { id: 'site-1' }, over: { id: 'site-3' } } as DragEndEvent));
     const order = () =>
       [...container.querySelectorAll('[data-site-id]')].map((e) => e.getAttribute('data-site-id'));
@@ -259,7 +295,7 @@ describe('应用排序保存与导航', () => {
     const user = userEvent.setup();
     render(<App />);
     await user.click(await screen.findByRole('button', { name: '打开分组导航' }));
-    await user.click(screen.getByRole('button', { name: '个人网站 3' }));
+    await user.click(await screen.findByRole('button', { name: '个人网站 3' }));
     await waitFor(() => expect(screen.getByText('网站 1')).toBeVisible());
     await waitFor(() => expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalled());
     expect(screen.queryByRole('button', { name: '排序' })).not.toBeInTheDocument();
